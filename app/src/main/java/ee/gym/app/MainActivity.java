@@ -116,11 +116,41 @@ public class MainActivity extends Activity {
     JSONObject p=new JSONObject();put(p,"id",System.currentTimeMillis()+new Random().nextInt(1000));put(p,"name",name);put(p,"days",new JSONArray());return p;
   }
   private void seedPlans(){
-    JSONArray a=new JSONArray();JSONObject p=newPlan("Push / Pull / Legs");JSONArray days=new JSONArray();
-    days.put(newDay("Push · rind ja õlad","Bench press","Incline dumbbell press","Shoulder press","Lateral raise","Tricep pushdown"));
-    days.put(newDay("Pull · selg ja biitseps","Pull-ups / Lat pulldown","T-bar row / Seated cable row","Face pull","Preacher curl","Hammer curl"));
-    days.put(newDay("Legs · jalad ja kõht","Squat / Hack squat","Leg press","Leg extension","Lying leg curl","Calf raises","Cable crunch"));
-    put(p,"days",days);a.put(p);save("plans",a);prefs.edit().putInt("selected_plan",0).apply();
+    JSONArray all=new JSONArray();JSONObject plan=newPlan("GBGB · 5 päeva");JSONArray days=new JSONArray();
+    days.put(gbgbDay("1. päev · rind ja biitseps",
+      new String[]{"Pec deck","Dips","Preacher curls","Dumbbell incline curls","Cable lateral raise"},
+      new String[]{"8-10","failure (max 12)","10-12","10-12","10-15"},
+      new String[]{"Hoia käed sirged","Kui alla 5 korduse, kasuta abikummi; üle 12 lisa raskust","Rohkem kordusi või suurem raskus","",""}));
+    days.put(gbgbDay("2. päev · selg ja triitseps",
+      new String[]{"Lat pulldown / Pull-ups","T-bar row / Cable row","Tricep pushdown","Tricep extension"},
+      new String[]{"","", "8-10","8-10"},
+      new String[]{"Jälgi tehnikat","Tõmba lõpuni taha ja lase ette välja","",""}));
+    days.put(gbgbDay("3. päev · jalad, kõht ja küünarvars",
+      new String[]{"Leg extension","Lying leg curl","Leg press","Reverse curl","Decline crunch / Captain's chair leg raises"},
+      new String[]{"10-12","10-12","8-10","failure","failure"},
+      new String[]{"","","","Vähemalt 10 kordust","Üle 25 korduse korral lisa raskust"}));
+    days.put(gbgbDay("4. päev · rind ja biitseps",
+      new String[]{"Bench press","Dumbbell incline bench press / Smith incline bench press","Bayesian curls","Hammer curls / Preacher curls","Seated dumbbell shoulder press"},
+      new String[]{"8-10","8-10","8-10","8-10","8-10"},
+      new String[]{"","","","Kaabliga alternatiiv sobib samuti",""}));
+    days.put(gbgbDay("5. päev · selg ja triitseps",
+      new String[]{"Lat pulldown / Pull-ups","T-bar row / Cable row","Tricep pushdown","Tricep extension"},
+      new String[]{"","","8-10","8-10"},
+      new String[]{"Jälgi tehnikat","Tõmba lõpuni taha ja lase ette välja","",""}));
+    put(plan,"days",days);all.put(plan);save("plans",all);prefs.edit().putInt("selected_plan",0).apply();
+  }
+  private JSONObject gbgbDay(String name,String[] names,String[] reps,String[] notes){
+    JSONObject day=newDay(name);JSONArray exercises=day.optJSONArray("exercises");
+    for(int i=0;i<names.length;i++){
+      JSONObject e=newExercise(names[i]);put(e,"sets",3);put(e,"reps",reps[i].isEmpty()?"Vali jõukohane korduste arv":reps[i]);
+      put(e,"note",notes[i]);exercises.put(e);
+    }
+    return day;
+  }
+  private void installGbgbPlan(){
+    JSONArray plans=list("plans");for(int i=0;i<plans.length();i++)if("GBGB · 5 päeva".equals(obj(plans,i).optString("name"))){prefs.edit().putInt("selected_plan",i).apply();go("Kavad");return;}
+    String existing=prefs.getString("plans","[]");seedPlans();JSONArray seeded=list("plans");JSONArray merged=array(existing);
+    merged.put(obj(seeded,0));save("plans",merged);prefs.edit().putInt("selected_plan",merged.length()-1).apply();go("Kavad");
   }
   private JSONObject plan(){JSONArray a=list("plans");return obj(a,Math.min(Math.max(0,prefs.getInt("selected_plan",0)),Math.max(0,a.length()-1)));}
   private int planIndex(){JSONArray a=list("plans");return Math.min(Math.max(0,prefs.getInt("selected_plan",0)),Math.max(0,a.length()-1));}
@@ -133,18 +163,18 @@ public class MainActivity extends Activity {
     tile.addView(text(amount,24,ACCENT,true));tile.addView(text(caption,12,MUTED,false));
   }
   private void home(){
-    title("Sinu treeningud");subtitle("Kõik vajalik ühes kohas. Ilma treenerita, sinu reeglite järgi.");
+    title("Ülevaade");
     JSONArray history=list("workouts");JSONObject metrics=json("metrics");
     LinearLayout r=new LinearLayout(this);content.addView(r);metricTile(r,""+history.length(),"Treeninguid");metricTile(r,metrics.optString("weight","–")+" kg","Kehakaal");
     LinearLayout rr=new LinearLayout(this);content.addView(rr);metricTile(rr,""+list("plans").length(),"Treeningkavasid");
     metricTile(rr,""+countSets(history),"Salvestatud seeriaid");
     JSONObject active=json("active_session");boolean running=active.has("started");
-    notice(running?"Pooleliolev treening":"Valmis treenima?",running?"Treeningu seeriad on salvestatud. Jätka sealt, kus pooleli jäid.":"Vali enda kava ja alusta treeningpäeva.");
+
     btn(running?"Jätka treeningut →":"Alusta treeningut →",()->go("Treening"));
     section("Kiirvalikud");LinearLayout card=panel();small(card,"▤   Halda treeningkavasid",()->go("Kavad"));small(card,"▥   Sisesta ümbermõõdud ja PR-id",()->go("Progress"));small(card,"◷   Vaata treeningajalugu",()->go("Ajalugu"));
     section("Viimane treening");
     if(history.length()>0){JSONObject last=obj(history,history.length()-1);notice(last.optString("day","Treening"),today(last.optLong("ended",0))+" · "+last.optJSONArray("exercises").length()+" harjutust");}
-    else notice("Veel pole treeninguid","Pärast esimest salvestatud treeningut näed siin kokkuvõtet.");
+
   }
   private int countSets(JSONArray sessions){
     int sets=0;for(int i=0;i<sessions.length();i++){JSONArray es=obj(sessions,i).optJSONArray("exercises");if(es==null)continue;
@@ -152,7 +182,7 @@ public class MainActivity extends Activity {
     return sets;
   }
   private void plans(){
-    title("Minu kavad");subtitle("Koosta, muuda ja vali ise oma treeningkavasid.");
+    title("Minu kavad");
     JSONArray plans=list("plans");
     for(int i=0;i<plans.length();i++){
       final int index=i;JSONObject p=obj(plans,i);LinearLayout c=panel();
@@ -164,6 +194,7 @@ public class MainActivity extends Activity {
         save("plans",next);prefs.edit().putInt("selected_plan",0).apply();show();
       }));
     }
+    btn("＋ Lisa GBGB 5-päevane kava",this::installGbgbPlan);
     btn("＋ Loo uus treeningkava",()->ask("Uue kava nimi","Näiteks Upper / Lower","",name->{
       JSONArray all=list("plans");all.put(newPlan(name));save("plans",all);prefs.edit().putInt("selected_plan",all.length()-1).apply();planEditor();
     }));
@@ -232,7 +263,7 @@ public class MainActivity extends Activity {
   private void workout(){
     JSONObject session=json("active_session");
     if(session.has("started")){activeWorkout(session);return;}
-    title("Treening");subtitle("Alusta treeningut oma kavast. Taimerit ei ole.");
+    title("Treening");
     JSONObject p=plan();JSONArray days=p.optJSONArray("days");
     section("Aktiivne kava · "+p.optString("name"));
     if(days==null||days.length()==0){notice("Kava on tühi","Lisa kõigepealt treeningkavale päev ja harjutused.");btn("Muuda kava",this::planEditor);return;}
@@ -308,7 +339,7 @@ public class MainActivity extends Activity {
     JSONArray es=session.optJSONArray("exercises");int n=0;if(es!=null)for(int i=0;i<es.length();i++){JSONArray sets=obj(es,i).optJSONArray("sets");if(sets!=null)n+=sets.length();}return n;
   }
   private void history(){
-    title("Treeningajalugu");subtitle("Harjutused ja seeriad kuupäevade järgi.");
+    title("Treeningajalugu");
     JSONArray workouts=list("workouts");if(workouts.length()==0){notice("Ajalugu on tühi","Salvesta esimene treening, et näha tulemusi.");return;}
     LinkedHashMap<String,ArrayList<JSONObject>> groups=new LinkedHashMap<>();
     for(int i=workouts.length()-1;i>=0;i--){JSONObject session=obj(workouts,i);String date=today(session.optLong("ended",0));groups.computeIfAbsent(date,k->new ArrayList<>()).add(session);}
@@ -358,7 +389,7 @@ public class MainActivity extends Activity {
     }
   }
   private void progress(){
-    title("Minu progress");subtitle("Mõõdud, kaal ja isiklikud rekordid.");
+    title("Minu progress");
     JSONObject data=json("metrics");section("Kehakaal");EditText weight=input(content,"Kehakaal (kg)",data.optString("weight"),true);
     section("Ümbermõõdud (cm)");JSONObject ms=data.optJSONObject("measurements");if(ms==null)ms=new JSONObject();
     LinkedHashMap<String,EditText> sizes=new LinkedHashMap<>();
