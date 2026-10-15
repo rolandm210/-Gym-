@@ -227,6 +227,7 @@ public class MainActivity extends Activity {
       int idx=i;JSONObject e=obj(ex,i);LinearLayout c=panel();c.addView(text(e.optString("name"),18,WHITE,true));
       c.addView(text(e.optInt("sets",3)+" seeriat × "+e.optString("reps","8–12")+" kordust",13,ACCENT,false));
       if(!e.optString("note").isEmpty())c.addView(text("Märkus: "+e.optString("note"),12,MUTED,false));
+      small(c,"Statistika ja ajalugu →",()->exerciseAnalytics(e.optString("name")));
       small(c,"✎ Muuda harjutust",()->editExercise(index,idx));
       small(c,"Eemalda",()->confirm("Eemalda harjutus?",e.optString("name"),()->{
         JSONArray updated=new JSONArray();JSONArray orig=day.optJSONArray("exercises");
@@ -296,6 +297,7 @@ public class MainActivity extends Activity {
       final int index=i;JSONObject exercise=obj(exercises,i);String name=exercise.optString("name");
       LinearLayout c=panel();c.addView(text(name,18,WHITE,true));c.addView(text("Eesmärk: "+exercise.optInt("targetSets",3)+" × "+exercise.optString("targetReps","8–12"),13,MUTED,false));
       if(!exercise.optString("note").isEmpty())c.addView(text(exercise.optString("note"),13,ACCENT,false));
+      small(c,"Statistika ja ajalugu →",()->exerciseAnalytics(exercise.optString("name")));
       String[] options=name.split(" / ");if(options.length>1)small(c,"Vaheta harjutust  ▾",()->new AlertDialog.Builder(this).setTitle("Vali harjutus").setItems(options,(d,w)->{
         put(exercise,"name",options[w].trim());save("active_session",session);show();
       }).show());
@@ -355,7 +357,7 @@ public class MainActivity extends Activity {
             if(k>0)log.append("  ·  ");log.append(set.optDouble("weight")).append(" kg × ").append(set.optInt("reps"));}
           c.addView(text(log.toString(),13,MUTED,false));
         }
-        small(c,"Vaata jõugraafikuid",()->exerciseCharts(session));
+        small(c,"Harjutuste statistika",()->exerciseCharts(session));
       }
     }
   }
@@ -364,18 +366,62 @@ public class MainActivity extends Activity {
     ArrayList<String> names=new ArrayList<>();for(int i=0;i<es.length();i++)if(obj(es,i).optJSONArray("sets")!=null&&!names.contains(obj(es,i).optString("name")))names.add(obj(es,i).optString("name"));
     new AlertDialog.Builder(this).setTitle("Harjutuse graafik").setItems(names.toArray(new String[0]),(d,w)->showChart(names.get(w))).setNegativeButton("Sulge",null).show();
   }
-  private void showChart(String exercise){
-    content.removeAllViews();title(exercise);subtitle("Suurim tööraskus treeningute lõikes");btn("← Ajalugu",()->go("Ajalugu"));
-    JSONArray history=list("workouts");ArrayList<Float> vals=new ArrayList<>();ArrayList<String> dates=new ArrayList<>();
-    for(int i=0;i<history.length();i++){JSONObject session=obj(history,i);JSONArray ex=session.optJSONArray("exercises");if(ex==null)continue;
-      float best=-1;for(int j=0;j<ex.length();j++){JSONObject e=obj(ex,j);if(!e.optString("name").equalsIgnoreCase(exercise))continue;
-        JSONArray sets=e.optJSONArray("sets");if(sets!=null)for(int k=0;k<sets.length();k++)best=Math.max(best,(float)obj(sets,k).optDouble("weight"));}
-      if(best>=0){vals.add(best);dates.add(today(session.optLong("ended",0)));}
+  private void showChart(String exercise){exerciseAnalytics(exercise);}
+  private void exerciseAnalytics(String requested){
+    String exercise=requested;
+    if(requested.contains(" / ")){
+      String[] options=requested.split(" / ");
+      new AlertDialog.Builder(this).setTitle("Vali harjutus").setItems(options,(d,i)->exerciseAnalytics(options[i].trim())).setNegativeButton("Sulge",null).show();
+      return;
     }
-    if(vals.isEmpty()){notice("Graafik puudub","Selle harjutuse seeriaid pole veel salvestatud.");return;}
-    notice("Parim tulemus",Collections.max(vals)+" kg · "+vals.size()+" treeningut");
-    ChartView chart=new ChartView(vals);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(240));cp.setMargins(0,dp(12),0,dp(12));content.addView(chart,cp);
-    for(int i=dates.size()-1;i>=0;i--)content.addView(text(dates.get(i)+"    "+vals.get(i)+" kg",14,MUTED,false));
+    content.removeAllViews();title(exercise);subtitle("Statistika · rekordid · ajalugu");
+    btn("← Tagasi",()->show());
+    JSONArray history=list("workouts");
+    ArrayList<Float> weights=new ArrayList<>(),strength=new ArrayList<>(),volumes=new ArrayList<>();
+    ArrayList<String> dates=new ArrayList<>(),details=new ArrayList<>();
+    double maxWeight=0,maxOneRm=0,totalVolume=0;int totalSets=0,totalReps=0;
+    for(int i=0;i<history.length();i++){
+      JSONObject workout=obj(history,i);JSONArray exercises=workout.optJSONArray("exercises");if(exercises==null)continue;
+      float sessionWeight=0,sessionRm=0,sessionVolume=0;int sessionSets=0;
+      StringBuilder rows=new StringBuilder();
+      for(int j=0;j<exercises.length();j++){
+        JSONObject e=obj(exercises,j);if(!exercise.equalsIgnoreCase(e.optString("name")))continue;
+        JSONArray sets=e.optJSONArray("sets");if(sets==null)continue;
+        for(int k=0;k<sets.length();k++){
+          JSONObject set=obj(sets,k);double kg=set.optDouble("weight",-1);int reps=set.optInt("reps",0);
+          if(kg<0||reps<1)continue;
+          double volume=kg*reps,rm=kg*(1+reps/30.0);
+          maxWeight=Math.max(maxWeight,kg);maxOneRm=Math.max(maxOneRm,rm);
+          totalVolume+=volume;totalSets++;totalReps+=reps;
+          sessionWeight=Math.max(sessionWeight,(float)kg);sessionRm=Math.max(sessionRm,(float)rm);
+          sessionVolume+=(float)volume;sessionSets++;
+          rows.append(k+1).append(". seeria · ").append(kg).append(" kg × ").append(reps)
+            .append(" · 1RM ~").append(Math.round(rm)).append(" kg\n");
+        }
+      }
+      if(sessionSets>0){
+        weights.add(sessionWeight);strength.add(sessionRm);volumes.add(sessionVolume);
+        dates.add(today(workout.optLong("ended",0)));
+        details.add(rows.toString().trim());
+      }
+    }
+    if(weights.isEmpty()){notice("Ajalugu puudub","Selle harjutuse salvestatud seeriaid veel pole.");return;}
+    LinearLayout row=new LinearLayout(this);content.addView(row);
+    metricTile(row,maxWeight+" kg","Suurim raskus");metricTile(row,Math.round(maxOneRm)+" kg","Hinnanguline 1RM");
+    LinearLayout row2=new LinearLayout(this);content.addView(row2);
+    metricTile(row2,""+totalSets,"Seeriaid");metricTile(row2,""+Math.round(totalVolume)+" kg","Kogumaht");
+    notice("Kokkuvõte",totalReps+" kordust · "+weights.size()+" treeningut");
+    section("Suurim raskus (kg)");chart(weights);
+    section("Hinnanguline jõud (1RM)");chart(strength);
+    section("Treeningmaht (kg)");chart(volumes);
+    section("Seeriate ajalugu");
+    for(int i=dates.size()-1;i>=0;i--){
+      LinearLayout c=panel();c.addView(text(dates.get(i),17,ACCENT,true));c.addView(text(details.get(i),14,WHITE,false));
+    }
+  }
+  private void chart(ArrayList<Float> values){
+    ChartView graph=new ChartView(values);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(205));
+    cp.setMargins(0,dp(6),0,dp(12));content.addView(graph,cp);
   }
   private class ChartView extends View{
     ArrayList<Float> values;ChartView(ArrayList<Float> a){super(MainActivity.this);values=a;setBackground(round(CARD,18));}
